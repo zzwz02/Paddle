@@ -301,6 +301,40 @@ void PoolGradRawGPUDNNKernel(const Context& ctx,
 }
 
 template <typename T, typename Context>
+void Pool2dGradGPUDNNKernel2(const Context& ctx,
+                            const DenseTensor& x,
+                            const DenseTensor& out,
+                            const DenseTensor& dout,
+                            const IntArray& kernel_size,
+                            const std::vector<int>& strides,
+                            const std::vector<int>& paddings,
+                            bool ceil_mode,
+                            bool exclusive,
+                            const std::string& data_format,
+                            const std::string& pooling_type,
+                            bool global_pooling,
+                            bool adaptive,
+                            const std::string& padding_algorithm,
+                            DenseTensor* dx) {
+  std::vector<int> kernel_size_val(kernel_size.GetData().begin(),
+                                   kernel_size.GetData().end());
+  PoolGradRawGPUDNNKernel<T, Context>(ctx,
+                                      x,
+                                      out,
+                                      dout,
+                                      kernel_size_val,
+                                      strides,
+                                      paddings,
+                                      exclusive,
+                                      data_format,
+                                      pooling_type,
+                                      global_pooling,
+                                      adaptive,
+                                      padding_algorithm,
+                                      dx);
+}
+
+template <typename T, typename Context>
 void Pool2dGradGPUDNNKernel(const Context& ctx,
                             const DenseTensor& x,
                             const DenseTensor& out,
@@ -403,6 +437,14 @@ void Pool3dGradGPUDNNKernel(const Context& ctx,
 }  // namespace phi
 
 using phi::dtype::float16;
+
+PD_REGISTER_KERNEL(pool2d_grad,
+                   GPU,
+                   ALL_LAYOUT,
+                   phi::Pool2dGradGPUDNNKernel2,
+                   float,
+                   double,
+                   phi::dtype::float16) {}
 
 #ifdef PADDLE_WITH_HIP
 // MIOPEN do not support double
