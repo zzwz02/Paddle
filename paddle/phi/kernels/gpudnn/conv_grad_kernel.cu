@@ -456,13 +456,14 @@ void ConvCudnnGradKernel(const Context& ctx,
   // HIP MIOPEN ONLY SUPPORT NCHW format
   auto compute_format = phi::backends::gpu::DataLayout::kNCHW;
 #else
-#if CUDNN_VERSION_MIN(8, 1, 0)
-  const bool compute_in_nhwc =
-      (dtype == CUDNN_DATA_HALF || dtype == CUDNN_DATA_BFLOAT16) &&
-      IsVoltaOrLater(ctx);
-#else
-  const bool compute_in_nhwc = dtype == CUDNN_DATA_HALF && IsVoltaOrLater(ctx);
-#endif
+  const bool compute_in_nhwc = true;
+// #if CUDNN_VERSION_MIN(8, 1, 0)
+//   const bool compute_in_nhwc =
+//       (dtype == CUDNN_DATA_HALF || dtype == CUDNN_DATA_BFLOAT16) &&
+//       IsVoltaOrLater(ctx);
+// #else
+//   const bool compute_in_nhwc = dtype == CUDNN_DATA_HALF && IsVoltaOrLater(ctx);
+// #endif
   auto compute_format = compute_in_nhwc && channel_last
                             ? phi::backends::gpu::DataLayout::kNHWC
                             : phi::backends::gpu::DataLayout::kNCHW;
@@ -753,6 +754,33 @@ void Conv3DCudnnGradKernel(const Context& dev_ctx,
                          paddings,
                          padding_algorithm,
                          dilations,
+                         groups,
+                         data_format,
+                         input_grad,
+                         filter_grad);
+}
+
+template <typename T, typename Context>
+void DepthwiseConvCudnnGradKernel2(const Context& dev_ctx,
+                                  const DenseTensor& input,//NCHW  nhwc
+                                  const DenseTensor& filter,
+                                  const DenseTensor& out_grad,
+                                  const std::vector<int>& strides_t,
+                                  const std::vector<int>& paddings_t,
+                                  const std::string& padding_algorithm,
+                                  int groups,
+                                  const std::vector<int>& dilations_t,
+                                  const std::string& data_format,
+                                  DenseTensor* input_grad,
+                                  DenseTensor* filter_grad) {
+  ConvCudnnGradKernel<T>(dev_ctx,
+                         input,
+                         filter,
+                         out_grad,
+                         strides_t,
+                         paddings_t,
+                         padding_algorithm,
+                         dilations_t,
                          groups,
                          data_format,
                          input_grad,
@@ -1453,6 +1481,15 @@ void Conv3DCudnnDoubleGradKernel(
 }
 
 }  // namespace phi
+
+// PD_REGISTER_KERNEL(depthwise_conv2d_grad,
+//                    GPUDNN,
+//                    ALL_LAYOUT,
+//                    phi::DepthwiseConvCudnnGradKernel2,
+//                    float,
+//                    double,
+//                    phi::dtype::float16,
+//                    phi::dtype::bfloat16) {}
 
 #ifdef PADDLE_WITH_HIP
 PD_REGISTER_KERNEL(conv2d_grad,
