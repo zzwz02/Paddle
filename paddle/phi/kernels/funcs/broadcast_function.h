@@ -37,6 +37,7 @@ struct BroadcastTypeClassifier {
   int broadcast_num{0};              // Not used for XPU
   bool all_elementwise{true};        // Not used for XPU
   Array<bool, Arity> use_broadcast;  // Not used for XPU
+  int64_t use_broadcast1 = 0;
   Array<kps::details::BroadcastConfig, Arity> configs;
   Array<const _ptr_ char *__restrict__, Arity> ins_data;
   Array<_ptr_ OutT *, NumOuts> outs_data;
@@ -46,14 +47,17 @@ struct BroadcastTypeClassifier {
                           std::vector<DenseTensor *> *outs,
                           int axis) {
     numel = (*outs)[0]->numel();
+    bool* use_braodcast_tmp = reinterpret_cast<bool*>(&use_broadcast1);
 
 #ifndef PADDLE_WITH_XPU_KP
     for (size_t i = 0; i < ins.size(); ++i) {
       bool is_same_dim = ins[i]->numel() == numel;
       if (is_same_dim) {
         use_broadcast[i] = false;
+        use_braodcast_tmp[i] = false;
       } else {
         use_broadcast[i] = true;
+        use_braodcast_tmp[i] = true;
         broadcast_num++;
       }
       all_elementwise &= is_same_dim;
@@ -104,7 +108,8 @@ struct BroadcastTypeClassifier {
         if (ins[i]->numel()) {
           configs[i] = kps::details::BroadcastConfig(dims_simplifier.out_dims,
                                                      dims_simplifier.in_dims[i],
-                                                     dims_simplifier.rank);
+                                                     dims_simplifier.rank,
+                                                     ins[i]->numel());
         }
       }
     }
@@ -351,13 +356,20 @@ template <typename Functor,
 __global__ void VectorizedBroadcastKernel(
     Array<const _ptr_ char *__restrict__, Arity> ins,
     Array<_ptr_ OutT *, NumOuts> outs,
-    Array<bool, Arity> use_broadcast,
+    // Array<bool, Arity> use_broadcast,
+    int64_t use_broadcast1,
     uint32_t numel,
     Array<kps::details::BroadcastConfig, Arity> configs,
     int main_offset,
     int tail_tid,
     int read_lens,
     Functor func) {
+
+    Array<bool, Arity> use_broadcast;
+    bool *use_broadcast_temp = reinterpret_cast<bool *>(&use_broadcast1);
+    for (size_t i = 0; i < Arity; ++i)
+      use_broadcast[i] = use_broadcast_temp[i];
+
 #ifdef PADDLE_WITH_XPU_KP
   int block_offset = BLOCK_ID_X * BLOCK_NUM_X * read_lens;
   int stride = BLOCK_NUM_X * GRID_NUM_X * read_lens;
@@ -477,7 +489,7 @@ void LaunchBroadcastKernel(
                               kElementwise>
         <<<blocks, threads, 0, stream>>>(classifier.ins_data,
                                          classifier.outs_data,
-                                         classifier.use_broadcast,
+                                         classifier.use_broadcast1,
                                          numel,
                                          classifier.configs,
                                          main_offset,
@@ -489,7 +501,7 @@ void LaunchBroadcastKernel(
     VectorizedBroadcastKernel<Functor, OutT, Arity, NumOuts, VecSize, type_>
         <<<blocks, threads, 0, stream>>>(classifier.ins_data,
                                          classifier.outs_data,
-                                         classifier.use_broadcast,
+                                         classifier.use_broadcast1,
                                          numel,
                                          classifier.configs,
                                          main_offset,
@@ -500,7 +512,7 @@ void LaunchBroadcastKernel(
     VectorizedBroadcastKernel<Functor, OutT, Arity, NumOuts, VecSize, kMixed>
         <<<blocks, threads, 0, stream>>>(classifier.ins_data,
                                          classifier.outs_data,
-                                         classifier.use_broadcast,
+                                         classifier.use_broadcast1,
                                          numel,
                                          classifier.configs,
                                          main_offset,
